@@ -70,24 +70,61 @@ async function boot() {
 sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" && !S.me) boot(); if (ev === "SIGNED_OUT") { S.me = null; renderLogin(); } });
 
 // ---------- login ----------
+// Email one-time code (OTP). Only existing, approved reviewers can ever get in: sign-ups are off (shouldCreateUser:false) and boot() re-checks the reviewer allowlist.
+const OTP_COOLDOWN = 60; // seconds between code requests from this device (Supabase also rate-limits server-side)
 function renderLogin(msg) {
   const app = $("#app"); app.replaceChildren();
-  const email = h("input", { type: "email", autocomplete: "email", placeholder: "you@email.com", required: true });
-  const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "Password" });
+  const email = h("input", { type: "email", autocomplete: "email", inputmode: "email", autocapitalize: "none", placeholder: "you@email.com", required: true });
+  const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "Password (optional)" });
   const err = h("p", { class: "muted" }, msg || "");
   const go = async () => {
     err.textContent = "";
     const { error } = await sb.auth.signInWithPassword({ email: email.value.trim(), password: pass.value });
-    if (error) err.textContent = "Sign-in failed. Check email and password, or use the email link.";
+    if (error) err.textContent = "Sign-in failed. Check email and password, or use an email code.";
   };
-  const link = async () => {
-    if (!email.value.trim()) { err.textContent = "Enter your email first."; return; }
-    const { error } = await sb.auth.signInWithOtp({ email: email.value.trim(), options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-    err.textContent = error ? "Could not send the link." : "If this email is an approved reviewer, a sign-in link is on its way.";
+  const sendCode = async (addr) => {
+    const { error } = await sb.auth.signInWithOtp({ email: addr, options: { shouldCreateUser: false } });
+    if (!error) return { ok: true };
+    if (error.status === 429 || /rate limit/i.test(error.message || "")) return { ok: false, text: "Too many emails sent recently. Please wait a few minutes and try again." };
+    if (error.status === 422 || /signups? not allowed|otp_disabled/i.test((error.code || "") + " " + (error.message || ""))) return { ok: true }; // not an approved account: same neutral answer, no code will arrive
+    return { ok: false, text: "Could not send the code (" + (error.code || error.status || "network") + "). Try again in a minute." };
+  };
+  const start = async () => {
+    const addr = email.value.trim();
+    if (!addr) { err.textContent = "Enter your email first."; return; }
+    err.textContent = "Sending...";
+    const r = await sendCode(addr);
+    if (!r.ok) { err.textContent = r.text; return; }
+    renderCode(addr);
   };
   app.append(h("div", { class: "login" }, h("h1", null, "CONLERO Approvals"), h("p", { class: "muted" }, "Private. Approved reviewers only."),
-    h("label", null, "Email", email), h("label", null, "Password", pass),
-    h("button", { class: "btn orange", onclick: go }, "Sign in"), h("button", { class: "btn neutral", onclick: link }, "Email me a sign-in link"), err));
+    h("label", null, "Email", email),
+    h("button", { class: "btn orange", onclick: start }, "Email me a code"),
+    h("details", null, h("summary", { class: "muted" }, "Use a password instead"), h("label", null, "Password", pass), h("button", { class: "btn neutral", onclick: go }, "Sign in")), err));
+  function renderCode(addr) {
+    app.replaceChildren();
+    const code = h("input", { type: "text", inputmode: "numeric", autocomplete: "one-time-code", pattern: "[0-9]*", maxlength: "10", placeholder: "Code from the email", "aria-label": "Verification code" });
+    const note = h("p", { class: "muted" }, "If this email is an approved reviewer, a code is on its way. It expires in about an hour.");
+    const cerr = h("p", { class: "muted" }, "");
+    const verify = async () => {
+      const token = code.value.replace(/\D/g, "");
+      if (token.length < 6) { cerr.textContent = "Enter the code from the email."; return; }
+      cerr.textContent = "Checking...";
+      const { error } = await sb.auth.verifyOtp({ email: addr, token, type: "email" });
+      if (error) cerr.textContent = error.status === 429 ? "Too many attempts. Wait a few minutes." : "That code is wrong or expired. Check it or request a new one.";
+      // success: onAuthStateChange(SIGNED_IN) -> boot() checks the reviewer allowlist
+    };
+    const resend = h("button", { class: "btn neutral", disabled: true }, "");
+    let left = OTP_COOLDOWN;
+    const tick = () => { resend.disabled = left > 0; resend.textContent = left > 0 ? `Resend code in ${left}s` : "Resend code"; if (left > 0) { left--; setTimeout(tick, 1000); } };
+    resend.onclick = async () => { if (left > 0) return; left = OTP_COOLDOWN; tick(); const r = await sendCode(addr); cerr.textContent = r.ok ? "A new code was requested." : r.text; };
+    tick();
+    code.addEventListener("keydown", (e) => { if (e.key === "Enter") verify(); });
+    app.append(h("div", { class: "login" }, h("h1", null, "Enter your code"), h("p", { class: "muted" }, "We emailed a code to " + addr + "."), note,
+      h("label", null, "Code", code), h("button", { class: "btn orange", onclick: verify }, "Verify and sign in"), resend,
+      h("button", { class: "btn neutral", onclick: () => renderLogin() }, "Use a different email"), cerr));
+    code.focus();
+  }
 }
 
 // ---------- shell ----------
