@@ -17,6 +17,16 @@ function h(tag, props, ...kids) {
   for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
   return el;
 }
+// In-app confirmation (native confirm() is unreliable in iPhone home-screen apps).
+function askConfirm(text, label) {
+  return new Promise((resolve) => {
+    const done = (v) => { back.remove(); resolve(v); };
+    const back = h("div", { class: "dlg" }, h("div", { class: "box" }, h("div", { class: "txt" }, text),
+      h("div", { class: "row" }, h("button", { class: "btn neutral", onclick: () => done(false) }, "Cancel"), h("button", { class: "btn primary", onclick: () => done(true) }, label || "Confirm"))));
+    document.body.append(back);
+  });
+}
+const flash = (text) => { S.flash = text; S.flashAt = Date.now(); setTimeout(() => { if (Date.now() - S.flashAt >= 11900 && !document.querySelector(".sheet") && S.me) render(); }, 12000); };
 const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3500); };
 const fmt = (iso, tz, o) => new Intl.DateTimeFormat("en-US", { timeZone: tz, ...o }).format(new Date(iso));
 const nyWhen = (iso) => fmt(iso, TZ, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
@@ -116,6 +126,7 @@ function render() {
   app.append(h("header", { class: "top" }, h("div", null, h("h1", null, "CONLERO Approvals"), h("div", { class: "sub" }, "Signed in as " + S.me.display_name + " · times in New York")),
     h("button", { class: "btn neutral refresh", onclick: () => load().then(render).catch((e) => toast(e.message)) }, "Refresh")));
   const main = h("main", null);
+  if (S.flash && Date.now() - S.flashAt < 12000) main.append(h("div", { class: "flash" }, S.flash));
   if (paused) main.append(h("div", { class: "banner" }, "Publishing is PAUSED. Nothing will be posted until you resume it in Settings."));
   ({ queue: viewQueue, library: viewLibrary, calendar: viewCalendar, history: viewHistory, settings: viewSettings }[S.tab])(main);
   app.append(main);
@@ -131,8 +142,22 @@ function thumbCard(p, onclick) {
 }
 
 // ---------- views ----------
+function weekKeyOf(iso) { const k = nyKey(new Date(iso)); return addDays(k, -((dowOf(k) + 6) % 7)); }
 function viewQueue(main) {
+  S.qview ||= "pending";
   const pending = S.posts.filter((p) => p.status === "ready_for_review");
+  const done = S.posts.filter((p) => ["approved", "publishing", "published"].includes(p.status));
+  main.append(h("div", { class: "seg" }, h("button", { class: S.qview === "pending" ? "on" : "", onclick: () => { S.qview = "pending"; render(); } }, "Waiting (" + pending.length + ")"),
+    h("button", { class: S.qview === "approved" ? "on" : "", onclick: () => { S.qview = "approved"; render(); } }, "Approved (" + done.length + ")")));
+  if (S.qview === "approved") {
+    if (!done.length) main.append(h("div", { class: "card muted" }, "Nothing approved yet."));
+    const wk = {}; done.forEach((p) => (wk[weekKeyOf(p.schedule_at)] ||= []).push(p));
+    Object.keys(wk).sort().forEach((k) => {
+      main.append(h("h2", null, "Week of " + fmt(keyToUTC(k), "UTC", { month: "short", day: "numeric" }) + " · " + wk[k].length + " approved"));
+      wk[k].forEach((p) => { main.append(thumbCard(p, () => openPost(p.id))); main.append(h("div", { class: "muted apby" }, "Approved by " + (p.approved_by || "—") + (p.approved_at ? " · " + nyWhen(p.approved_at) : ""))); });
+    });
+    return;
+  }
   main.append(h("h2", null, "Waiting for your approval"));
   if (!pending.length) main.append(h("div", { class: "card muted" }, "Nothing is waiting. New items appear here when Claude prepares them."));
   const weeks = {}; pending.forEach((p) => { const k = nyKey(new Date(p.schedule_at)); (weeks[addDays(k, -((dowOf(k) + 6) % 7))] ||= []).push(p); }); // weeks run Monday to Sunday (New York)
@@ -142,8 +167,6 @@ function viewQueue(main) {
     list.forEach((p) => main.append(thumbCard(p, () => openPost(p.id))));
     main.append(h("button", { class: "btn primary", onclick: () => approveAll(list) }, "Approve all " + list.length + " in this week"));
   });
-  const sched = S.posts.filter((p) => ["approved", "publishing"].includes(p.status));
-  if (sched.length) { main.append(h("h2", null, "Approved · scheduled")); sched.forEach((p) => main.append(thumbCard(p, () => openPost(p.id)))); }
   const other = S.posts.filter((p) => ["changes_requested", "postponed", "failed", "needs_reconcile"].includes(p.status));
   if (other.length) { main.append(h("h2", null, "Needs attention")); other.forEach((p) => main.append(thumbCard(p, () => openPost(p.id)))); }
 }
@@ -198,7 +221,7 @@ function viewSettings(main) {
   const pc = h("div", { class: "card" }, h("h3", { class: "flat" }, "Pause all publishing"),
     h("p", { class: "muted" }, paused ? "Publishing is paused. Approved posts stay scheduled but nothing is sent to Facebook or Instagram." : "Publishing is active. Approved posts go out at their scheduled New York time."),
     h("button", { class: "btn " + (paused ? "primary" : "danger"), onclick: async () => {
-      if (!confirm(paused ? "Resume publishing?" : "Pause ALL publishing now?")) return;
+      if (!(await askConfirm(paused ? "Resume publishing?" : "Pause ALL publishing now?", paused ? "Resume" : "Pause all"))) return;
       await act(() => sb.rpc("publisher_set_setting", { p_key: "publishing_paused", p_value: !paused }), paused ? "Publishing resumed" : "Publishing paused");
     } }, paused ? "Resume publishing" : "Pause all publishing"));
   const bat = S.settings.approval_batches?.value || { days: ["sun", "wed"], time: "09:00" };
@@ -242,17 +265,19 @@ function contactCard(p) {
 async function approveAll(list) {
   const NL = String.fromCharCode(10);
   const lines = list.map((p) => "• " + nyWhen(p.schedule_at) + " · " + p.id).join(NL);
-  if (!confirm("Approve " + list.length + " packages?" + NL + NL + lines + NL + NL + "Each is released for its own scheduled time. Nothing is posted immediately.")) return;
-  if (S.busy) return; S.busy = true; let ok = 0; const bad = [];
+  if (S.busy) return;
+  if (!(await askConfirm("Approve " + list.length + " packages?" + NL + NL + lines + NL + NL + "Each is released for its own scheduled time. Nothing is posted immediately.", "Approve " + list.length))) return;
+  S.busy = true; let ok = 0; const bad = []; flash("Approving " + list.length + " packages..."); render();
   for (const p of list) { const { error } = await sb.rpc("publisher_review", { p_id: p.id, p_hash: p.content_hash, p_decision: "approved", p_note: null }); if (error) bad.push(p.id + ": " + String(error.message).slice(0, 60)); else ok++; }
-  S.busy = false; await load().catch(() => {}); render(); toast(bad.length ? "Approved " + ok + " of " + list.length + ". Problem: " + bad[0] : "Approved " + ok + " packages (each at its own scheduled time)");
+  S.busy = false; await load().catch(() => {}); if (ok) S.qview = "approved";
+  flash(bad.length ? "Approved " + ok + " of " + list.length + ". Problem: " + bad[0] : "✓ Approved " + ok + " packages. Each goes out at its own scheduled time."); render();
 }
 
 // ---------- post detail ----------
 async function act(fn, okMsg) {
-  if (S.busy) return false; S.busy = true;
-  try { const { error } = await fn(); if (error) throw error; await load(); toast(okMsg); return true; }
-  catch (e) { toast(String(e.message || e).replace(/^.*STALE/, "STALE")); await load().catch(() => {}); return false; }
+  if (S.busy) return false; S.busy = true; flash("Working..."); render();
+  try { const { error } = await fn(); if (error) throw error; await load(); if (/^Approved/.test(okMsg)) S.qview = "approved"; flash("✓ " + okMsg); toast(okMsg); return true; }
+  catch (e) { const m = String(e.message || e).replace(/^.*STALE/, "STALE"); flash("⚠ " + m); toast(m); await load().catch(() => {}); return false; }
   finally { S.busy = false; render(); }
 }
 async function openPost(id) {
@@ -287,7 +312,7 @@ async function openPost(id) {
     const note = needNote ? $("#note", sheet).value.trim() : null;
     if (decision === "changes_requested" && !note) return toast("Please write what should change");
     const msg = decision === "approved" ? `Approve v${p.version} (${p.content_hash.slice(0, 8)}) for ${nyWhen(p.schedule_at)} on ${p.platforms.map((x) => PLAT[x]).join(" + ")}?\nIt will be posted automatically at that time.` : decision === "rejected" ? "Reject this post?" : decision === "postponed" ? "Postpone this post? It will not publish until it is rescheduled." : "Send change request?";
-    if (!confirm(msg)) return;
+    if (!(await askConfirm(msg, decision === "approved" ? "Approve" : "Confirm"))) return;
     if (await act(() => sb.rpc("publisher_review", { p_id: p.id, p_hash: p.content_hash, p_decision: decision, p_note: note }), decision === "approved" ? "Approved and scheduled" : "Saved")) close();
   };
   if (["ready_for_review", "approved"].includes(p.status)) {

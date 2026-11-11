@@ -52,3 +52,10 @@ a { color:var(--orange); }
 
 .slide { flex:none; width:86%; max-width:520px; scroll-snap-align:center; } .slide img { width:100%; max-width:none; } .chip.warnflag { background:#fff2d6; color:#7a4b00; } .card.flags { border-color:#f1c27d; }
 nav.tabs button { font-size:11px; }
+
+.dlg { position:fixed; inset:0; background:rgba(8,16,36,.6); z-index:40; display:flex; align-items:center; justify-content:center; padding:20px; }
+.dlg .box { background:var(--card); color:var(--text); border-radius:16px; padding:18px; max-width:420px; width:100%; max-height:80vh; overflow:auto; }
+.dlg .txt { white-space:pre-wrap; line-height:1.45; margin-bottom:14px; } .dlg .row { display:flex; gap:10px; } .dlg .row .btn { flex:1; }
+.flash { background:#dff3e6; color:#14663a; border:1px solid #a9dcbc; padding:12px 14px; border-radius:12px; margin-bottom:14px; font-weight:600; }
+.seg { display:flex; gap:8px; margin-bottom:12px; } .seg button { flex:1; padding:12px 8px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); font-weight:700; font-size:15px; }
+.seg button.on { background:var(--navy); color:#fff; border-color:var(--navy); } .apby { margin:-4px 4px 12px; font-size:13px; }
