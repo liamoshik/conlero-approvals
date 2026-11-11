@@ -4,6 +4,7 @@ if (window.top !== window.self) { document.documentElement.textContent = ""; thr
 const CFG = window.APP_CONFIG;
 const sb = window.supabase.createClient(CFG.url, CFG.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 const TZ = CFG.timezone; // all scheduling in America/New_York. Never the device timezone.
+const APP_VERSION = "2026-11-11.5";
 const S = { me: null, posts: [], approvals: [], settings: {}, tab: "queue", calMode: "week", calAnchor: null, urls: {}, busy: false };
 
 // ---------- helpers ----------
@@ -161,9 +162,12 @@ function viewQueue(main) {
   main.append(h("h2", null, "Waiting for your approval"));
   if (!pending.length) main.append(h("div", { class: "card muted" }, "Nothing is waiting. New items appear here when Claude prepares them."));
   const weeks = {}; pending.forEach((p) => { const k = nyKey(new Date(p.schedule_at)); (weeks[addDays(k, -((dowOf(k) + 6) % 7))] ||= []).push(p); }); // weeks run Monday to Sunday (New York)
+  const notReady = S.posts.filter((p) => p.status === "draft" && !String(p.schedule_local || "").startsWith("unscheduled")); // scheduled but not ready (shown so each week is complete)
   Object.keys(weeks).sort().forEach((wk) => {
     const list = weeks[wk];
-    main.append(h("h2", null, "Week of " + fmt(keyToUTC(wk), "UTC", { month: "short", day: "numeric" }) + " · " + list.length + " package" + (list.length > 1 ? "s" : "")));
+    const later = notReady.filter((p) => weekKeyOf(p.schedule_at) === wk);
+    main.append(h("h2", null, "Week of " + fmt(keyToUTC(wk), "UTC", { month: "short", day: "numeric" }) + " · " + (list.length + later.length) + " package" + (list.length + later.length > 1 ? "s" : "") + (later.length ? " (" + later.length + " not ready)" : "")));
+    later.forEach((p) => { main.append(thumbCard(p, () => openPost(p.id))); main.append(h("div", { class: "muted apby" }, "Not ready yet: " + (p.meta?.needs_caption ? "caption is still being prepared." : "still being prepared, it will appear here when ready."))); });
     S.skip ||= new Set();
     const chosen = list.filter((p) => !S.skip.has(p.id)), rest = list.filter((p) => S.skip.has(p.id));
     list.forEach((p) => {
@@ -253,7 +257,7 @@ function viewSettings(main) {
       h("div", null, "Held for you"), h("div", null, (ss.held_for_decision || []).length ? ss.held_for_decision.join(", ") + " (source of a removed package: tell Claude whether to rebuild it)" : "none"),
       h("div", null, "Request"), h("div", null, sr.pending ? "Waiting for the office PC (asked " + nyWhen(sr.requested_at) + ")" : "none")),
     h("button", { class: "btn orange", disabled: !!sr.pending, onclick: () => act(() => sb.rpc("publisher_request_sync"), "Sync requested. The office PC picks it up within about 15 minutes.") }, sr.pending ? "Sync requested…" : "Sync Library Now"));
-  main.append(pc, sc, bc, pwCard(), h("div", { class: "card" }, h("p", { class: "muted" }, "Signed in as " + S.me.display_name + " (" + S.me.email + ")"), h("button", { class: "btn neutral", onclick: () => sb.auth.signOut({ scope: "local" }) }, "Sign out")));
+  main.append(pc, sc, bc, pwCard(), h("div", { class: "card" }, h("p", { class: "muted" }, "Signed in as " + S.me.display_name + " (" + S.me.email + ")"), h("p", { class: "muted" }, "App version " + APP_VERSION), h("button", { class: "btn neutral", onclick: () => sb.auth.signOut({ scope: "local" }) }, "Sign out")));
 }
 
 // Always shown in the approval screen: content type, CTA strategy, destinations, hashtags, verified contact details.
