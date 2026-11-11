@@ -4,7 +4,7 @@ if (window.top !== window.self) { document.documentElement.textContent = ""; thr
 const CFG = window.APP_CONFIG;
 const sb = window.supabase.createClient(CFG.url, CFG.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 const TZ = CFG.timezone; // all scheduling in America/New_York. Never the device timezone.
-const APP_VERSION = "2026-11-11.5";
+const APP_VERSION = "2026-11-11.6";
 const S = { me: null, posts: [], approvals: [], settings: {}, tab: "queue", calMode: "week", calAnchor: null, urls: {}, busy: false };
 
 // ---------- helpers ----------
@@ -306,8 +306,8 @@ async function openPost(id) {
   const paint = () => {
     seg.replaceChildren(...(p.platforms || []).map((x) => h("button", { class: x === plat ? "on" : "", onclick: () => { plat = x; paint(); } }, PLAT[x])));
     const text = finalCaption(p, plat); capBox.textContent = text;
-    const web = new RegExp(CFG.business.website.replace(".", "\\."), "i").test(text), ph = new RegExp(CFG.business.phoneMatch).test(text);
-    checks.replaceChildren(h("div", { class: "check " + (web ? "ok" : "no") }, "Website " + CFG.business.website + (web ? " is in the caption" : " is NOT in the caption")),
+    const webText = new RegExp(CFG.business.website.replace(".", "\\."), "i").test(text), webBio = plat === "instagram" && /link in (our )?bio/i.test(text), ph = new RegExp(CFG.business.phoneMatch).test(text);
+    checks.replaceChildren(h("div", { class: "check " + (webText || webBio ? "ok" : "na") }, webText ? "Website " + CFG.business.website + " is in the caption" : webBio ? "Website reachable via the link in our bio (Instagram captions cannot hold clickable links)" : "Website " + CFG.business.website + " is not written in this caption (optional)"),
       h("div", { class: "check " + (ph ? "ok" : "na") }, ph ? "Phone " + CFG.business.phoneDisplay + " is in the caption" : "Phone " + CFG.business.phoneDisplay + " is not in this caption (optional)"),
       h("div", { class: "check na" }, text.length + " characters · " + ((text.match(/#\w+/g) || []).length) + " hashtags"));
   };
