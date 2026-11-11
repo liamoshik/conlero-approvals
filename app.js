@@ -62,12 +62,12 @@ async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return renderLogin();
   const { data: me } = await sb.from("publisher_reviewers").select("*").eq("user_id", session.user.id).maybeSingle();
-  if (!me || !me.active) { await sb.auth.signOut(); return renderLogin("This account is not an approved reviewer."); }
+  if (!me || !me.active) { await sb.auth.signOut({ scope: "local" }); return renderLogin("This account is not an approved reviewer."); }
   S.me = me;
   try { await load(); } catch (e) { toast("Load failed: " + e.message); }
   render();
 }
-sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" && !S.me) boot(); if (ev === "SIGNED_OUT") { S.me = null; renderLogin(); } });
+sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" && !S.me) boot(); if (ev === "SIGNED_OUT") { const was = !!S.me; S.me = null; renderLogin(was ? "You are signed out. Sign in again to continue." : ""); } });
 
 // ---------- login ----------
 // Email + password (Supabase Auth). Sign-ups are disabled server-side; boot() additionally requires an active row in publisher_reviewers.
@@ -221,7 +221,7 @@ function viewSettings(main) {
       h("div", null, "Held for you"), h("div", null, (ss.held_for_decision || []).length ? ss.held_for_decision.join(", ") + " (source of a removed package: tell Claude whether to rebuild it)" : "none"),
       h("div", null, "Request"), h("div", null, sr.pending ? "Waiting for the office PC (asked " + nyWhen(sr.requested_at) + ")" : "none")),
     h("button", { class: "btn orange", disabled: !!sr.pending, onclick: () => act(() => sb.rpc("publisher_request_sync"), "Sync requested. The office PC picks it up within about 15 minutes.") }, sr.pending ? "Sync requested…" : "Sync Library Now"));
-  main.append(pc, sc, bc, pwCard(), h("div", { class: "card" }, h("p", { class: "muted" }, "Signed in as " + S.me.display_name + " (" + S.me.email + ")"), h("button", { class: "btn neutral", onclick: () => sb.auth.signOut() }, "Sign out")));
+  main.append(pc, sc, bc, pwCard(), h("div", { class: "card" }, h("p", { class: "muted" }, "Signed in as " + S.me.display_name + " (" + S.me.email + ")"), h("button", { class: "btn neutral", onclick: () => sb.auth.signOut({ scope: "local" }) }, "Sign out")));
 }
 
 // Always shown in the approval screen: content type, CTA strategy, destinations, hashtags, verified contact details.
