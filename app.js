@@ -302,4 +302,15 @@ async function openPost(id) {
 }
 
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+// Keep the view current when another reviewer approves: refresh when the app returns to the foreground and every 60 s while visible
+// (never while a post is open, a field is focused, or a request is running).
+let lastRefresh = 0;
+async function autoRefresh() {
+  if (!S.me || S.busy || document.hidden || document.querySelector(".sheet") || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) return;
+  if (Date.now() - lastRefresh < 20000) return; lastRefresh = Date.now();
+  const y = window.scrollY;
+  try { await load(); render(); window.scrollTo(0, y); } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
+setInterval(autoRefresh, 60000);
 boot();
