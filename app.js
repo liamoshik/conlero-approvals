@@ -164,8 +164,17 @@ function viewQueue(main) {
   Object.keys(weeks).sort().forEach((wk) => {
     const list = weeks[wk];
     main.append(h("h2", null, "Week of " + fmt(keyToUTC(wk), "UTC", { month: "short", day: "numeric" }) + " · " + list.length + " package" + (list.length > 1 ? "s" : "")));
-    list.forEach((p) => main.append(thumbCard(p, () => openPost(p.id))));
-    main.append(h("button", { class: "btn primary", onclick: () => approveAll(list) }, "Approve all " + list.length + " in this week"));
+    S.skip ||= new Set();
+    const chosen = list.filter((p) => !S.skip.has(p.id)), rest = list.filter((p) => S.skip.has(p.id));
+    list.forEach((p) => {
+      const cb = h("input", { type: "checkbox", "aria-label": "Include " + p.id });
+      cb.checked = !S.skip.has(p.id);
+      cb.addEventListener("change", () => { if (cb.checked) S.skip.delete(p.id); else S.skip.add(p.id); const y = window.scrollY; render(); window.scrollTo(0, y); });
+      main.append(h("div", { class: "pickrow" }, h("label", { class: "pick" }, cb), h("div", { class: "grow" }, thumbCard(p, () => openPost(p.id)),
+        h("button", { class: "btn neutral one", onclick: () => approveAll([p]) }, "Approve only this one"))));
+    });
+    main.append(h("button", { class: "btn primary", disabled: !chosen.length, onclick: () => approveAll(chosen, rest) },
+      chosen.length ? "Approve " + chosen.length + (rest.length ? " selected (" + rest.length + " stay waiting)" : (list.length > 1 ? " (all in this week)" : "")) : "Nothing selected"));
   });
   const other = S.posts.filter((p) => ["changes_requested", "postponed", "failed", "needs_reconcile"].includes(p.status));
   if (other.length) { main.append(h("h2", null, "Needs attention")); other.forEach((p) => main.append(thumbCard(p, () => openPost(p.id)))); }
@@ -262,12 +271,14 @@ function contactCard(p) {
     h("div", null, "Note"), h("div", null, "Buttons drawn inside the image (e.g. FREE INSPECTION) are not clickable. The phone number does not have to be in every caption."));
 }
 
-async function approveAll(list) {
+async function approveAll(list, rest) {
   const NL = String.fromCharCode(10);
   const lines = list.map((p) => "• " + nyWhen(p.schedule_at) + " · " + p.id).join(NL);
   if (S.busy) return;
-  if (!(await askConfirm("Approve " + list.length + " packages?" + NL + NL + lines + NL + NL + "Each is released for its own scheduled time. Nothing is posted immediately.", "Approve " + list.length))) return;
-  S.busy = true; let ok = 0; const bad = []; flash("Approving " + list.length + " packages..."); render();
+  const keep = (rest || []).length ? NL + NL + "NOT included (they stay waiting):" + NL + rest.map((p) => "• " + nyWhen(p.schedule_at) + " · " + p.id).join(NL) : "";
+  if (!(await askConfirm("Approve " + list.length + (list.length === 1 ? " package?" : " packages?") + NL + NL + lines + keep + NL + NL + "Each is released for its own scheduled time. Nothing is posted immediately.", "Approve " + list.length))) return;
+  list.forEach((p) => S.skip && S.skip.delete(p.id));
+  S.busy = true; let ok = 0; const bad = []; flash("Approving " + list.length + (list.length === 1 ? " package..." : " packages...")); render();
   for (const p of list) { const { error } = await sb.rpc("publisher_review", { p_id: p.id, p_hash: p.content_hash, p_decision: "approved", p_note: null }); if (error) bad.push(p.id + ": " + String(error.message).slice(0, 60)); else ok++; }
   S.busy = false; await load().catch(() => {}); if (ok) S.qview = "approved";
   flash(bad.length ? "Approved " + ok + " of " + list.length + ". Problem: " + bad[0] : "✓ Approved " + ok + " packages. Each goes out at its own scheduled time."); render();

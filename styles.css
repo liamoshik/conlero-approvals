@@ -59,3 +59,7 @@ nav.tabs button { font-size:11px; }
 .flash { background:#dff3e6; color:#14663a; border:1px solid #a9dcbc; padding:12px 14px; border-radius:12px; margin-bottom:14px; font-weight:600; }
 .seg { display:flex; gap:8px; margin-bottom:12px; } .seg button { flex:1; padding:12px 8px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); font-weight:700; font-size:15px; }
 .seg button.on { background:var(--navy); color:#fff; border-color:var(--navy); } .apby { margin:-4px 4px 12px; font-size:13px; }
+
+.pickrow { display:flex; gap:8px; align-items:flex-start; margin-bottom:10px; } .pickrow .grow { flex:1; min-width:0; }
+.pick { flex:none; padding:14px 6px 0 0; } .pick input { width:24px; height:24px; accent-color:var(--orange); }
+.btn.one { margin-top:6px; width:100%; } .btn:disabled { opacity:.5; }
