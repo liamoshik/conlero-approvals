@@ -92,6 +92,22 @@ function renderLogin(msg) {
     h("button", { class: "btn orange", onclick: go }, "Sign in"), err));
 }
 
+// ---------- change own password ----------
+function pwCard() {
+  const a = h("input", { type: "password", autocomplete: "new-password", placeholder: "New password (8+ characters)" });
+  const b = h("input", { type: "password", autocomplete: "new-password", placeholder: "Repeat new password" });
+  const msg = h("p", { class: "muted" }, "");
+  const save = async () => {
+    if (a.value.length < 8) { msg.textContent = "Use at least 8 characters."; return; }
+    if (a.value !== b.value) { msg.textContent = "The two entries differ."; return; }
+    msg.textContent = "Saving...";
+    const { error } = await sb.auth.updateUser({ password: a.value });
+    if (error) { msg.textContent = /same|different/i.test(error.message || "") ? "Choose a password different from the current one." : /weak|short|least/i.test(error.message || "") ? "That password is too weak. Try a longer one." : "Could not change the password. Try again."; return; }
+    a.value = ""; b.value = ""; msg.textContent = "Password changed. Use it the next time you sign in.";
+  };
+  return h("div", { class: "card" }, h("h3", null, "Change my password"), h("label", null, "New password", a), h("label", null, "Repeat", b), h("button", { class: "btn neutral", onclick: save }, "Save password"), msg);
+}
+
 // ---------- shell ----------
 function render() {
   const app = $("#app"); app.replaceChildren();
@@ -205,7 +221,7 @@ function viewSettings(main) {
       h("div", null, "Held for you"), h("div", null, (ss.held_for_decision || []).length ? ss.held_for_decision.join(", ") + " (source of a removed package: tell Claude whether to rebuild it)" : "none"),
       h("div", null, "Request"), h("div", null, sr.pending ? "Waiting for the office PC (asked " + nyWhen(sr.requested_at) + ")" : "none")),
     h("button", { class: "btn orange", disabled: !!sr.pending, onclick: () => act(() => sb.rpc("publisher_request_sync"), "Sync requested. The office PC picks it up within about 15 minutes.") }, sr.pending ? "Sync requested…" : "Sync Library Now"));
-  main.append(pc, sc, bc, h("div", { class: "card" }, h("p", { class: "muted" }, "Signed in as " + S.me.display_name + " (" + S.me.email + ")"), h("button", { class: "btn neutral", onclick: () => sb.auth.signOut() }, "Sign out")));
+  main.append(pc, sc, bc, pwCard(), h("div", { class: "card" }, h("p", { class: "muted" }, "Signed in as " + S.me.display_name + " (" + S.me.email + ")"), h("button", { class: "btn neutral", onclick: () => sb.auth.signOut() }, "Sign out")));
 }
 
 // Always shown in the approval screen: content type, CTA strategy, destinations, hashtags, verified contact details.
