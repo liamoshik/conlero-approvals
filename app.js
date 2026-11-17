@@ -147,13 +147,14 @@ function weekKeyOf(iso) { const k = nyKey(new Date(iso)); return addDays(k, -((d
 function viewQueue(main) {
   S.qview ||= "pending";
   const pending = S.posts.filter((p) => p.status === "ready_for_review");
-  const done = S.posts.filter((p) => ["approved", "publishing", "published"].includes(p.status));
+  const done = S.posts.filter((p) => ["approved", "publishing"].includes(p.status)); // published posts live in the History tab
   main.append(h("div", { class: "seg" }, h("button", { class: S.qview === "pending" ? "on" : "", onclick: () => { S.qview = "pending"; render(); } }, "Waiting (" + pending.length + ")"),
     h("button", { class: S.qview === "approved" ? "on" : "", onclick: () => { S.qview = "approved"; render(); } }, "Approved (" + done.length + ")")));
   if (S.qview === "approved") {
-    if (!done.length) main.append(h("div", { class: "card muted" }, "Nothing approved yet."));
+    if (!done.length) main.append(h("div", { class: "card muted" }, "Nothing approved and waiting to post. Published posts are in History."));
     const wk = {}; done.forEach((p) => (wk[weekKeyOf(p.schedule_at)] ||= []).push(p));
-    Object.keys(wk).sort().forEach((k) => {
+    Object.keys(wk).sort().reverse().forEach((k) => { // newest week first, newest post first inside each week
+      wk[k].sort((a, b) => new Date(b.schedule_at) - new Date(a.schedule_at));
       main.append(h("h2", null, "Week of " + fmt(keyToUTC(k), "UTC", { month: "short", day: "numeric" }) + " · " + wk[k].length + " approved"));
       wk[k].forEach((p) => { main.append(thumbCard(p, () => openPost(p.id))); main.append(h("div", { class: "muted apby" }, "Approved by " + (p.approved_by || "—") + (p.approved_at ? " · " + nyWhen(p.approved_at) : ""))); });
     });
