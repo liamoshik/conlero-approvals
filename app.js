@@ -163,7 +163,7 @@ function viewQueue(main) {
   main.append(h("h2", null, "Waiting for your approval"));
   if (!pending.length) main.append(h("div", { class: "card muted" }, "Nothing is waiting. New items appear here when Claude prepares them."));
   const weeks = {}; pending.forEach((p) => { const k = nyKey(new Date(p.schedule_at)); (weeks[addDays(k, -((dowOf(k) + 6) % 7))] ||= []).push(p); }); // weeks run Monday to Sunday (New York)
-  const notReady = S.posts.filter((p) => p.status === "draft" && !String(p.schedule_local || "").startsWith("unscheduled")); // scheduled but not ready (shown so each week is complete)
+  const notReady = []; // owner request 2026-11-17: Waiting lists ONLY posts that are ready for approval (drafts are not shown here)
   Object.keys(weeks).sort().forEach((wk) => {
     const list = weeks[wk];
     const later = notReady.filter((p) => weekKeyOf(p.schedule_at) === wk);
